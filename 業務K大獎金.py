@@ -10,13 +10,13 @@ import pyodbc
 import time
 import re
 
+
 os.system("cls")
 os.getcwd()
-os.chdir("/Users/meng/Desktop/KD/獎金計算")
+os.chdir("/Users/Hsuan/Desktop/KD/獎金計算")
 
 
-
-####"####################### CRM Setting ###########################
+########################### CRM Setting ###########################
 ###################################################################
 userID = "11021300@twkd.com"
 pwd = "Kd11021300"
@@ -98,16 +98,28 @@ data_staff['獎金用職級'] = data_staff.apply(lambda x: re.sub(r'[\[\]\"\']',
 
 
 first_day = dt.datetime.today().replace(day=1)
-data_staff = data_staff.loc[
+##展示館
+exh_staff = data_staff.loc[
     (data_staff['失效日期'].isna() | (data_staff['失效日期'] >= first_day)) &
     ((data_staff['獎金用職級'] == '門市業務') | (data_staff['獎金用職級'] == '展示館兼職'))]
-data_staff = data_staff.drop_duplicates(subset=['員工編號'])
+exh_staff = exh_staff.drop_duplicates(subset=['員工編號'])
+
+##外勤業務
+staff_names = ['張瑋', '蔡家維', '邱健貿', '林怡伶', '洪宜庭']
+sales_staff = data_staff.loc[
+    ((data_staff['失效日期'].isna() | (data_staff['失效日期'] >= first_day)) &
+    (data_staff['獎金用職級'].isin(['外勤業務', '系統櫃外勤業務']))) |
+    (data_staff['人員姓名'].isin(staff_names))]
+sales_staff = sales_staff.drop_duplicates(subset=['員工編號'])
+sales_staff = sales_staff.loc[~(sales_staff['人員姓名'] == '馬來西亞')]
+
 
 
 
 
 ##################################
 ########## 展示館預約資料 ##########
+##################################
 now = pd.Timestamp.now(tz="UTC") 
 start_date_K = pd.Timestamp(year=now.year, month=now.month, day=1, tz="UTC").timestamp() * 1000
 
@@ -124,8 +136,8 @@ SELECT name
 ,customItem29__c 展示館區域
 FROM customEntity43__c
 WHERE customItem1__c >= {start_date_K}'''
-TWOS_exh = query_CRM(select_query)
-data_exh = TWOS_exh[:]
+TW_exh = query_CRM(select_query)
+data_exh = TW_exh[:]
 
 data_exh['預約參訪日期'] = data_exh['預約參訪日期'].apply(fn_datetime)
 data_exh['預約參訪日期'] = pd.to_datetime(data_exh['預約參訪日期'])
@@ -137,8 +149,8 @@ data_exh['是否來訪'] = data_exh['是否來訪'].str.get(0)
 
 data_exh['接待人員'] = data_exh['接待人員'].replace("", float("nan"))
 data_exh = data_exh.loc[data_exh['接待人員'].notna()]
-data_exh = data_exh[data_exh['接待人員'].isin(data_staff['人員姓名'])]
-data_exh = data_exh.merge(data_staff[["人員姓名", "獎金用職級"]], left_on="接待人員", right_on="人員姓名", how="left")
+data_exh = data_exh[data_exh['接待人員'].isin(exh_staff['人員姓名'])]
+data_exh = data_exh.merge(exh_staff[["人員姓名", "獎金用職級"]], left_on="接待人員", right_on="人員姓名", how="left")
 data_exh  = data_exh .drop(columns=["人員姓名"])
 
 data_exh['交辦認列場次'] = data_exh.apply(
@@ -172,11 +184,90 @@ data_exh_final = data_exh.groupby('接待人員').agg(
     K大認列場次 =('K大認列場次', 'sum')
 ).reset_index()
 
-data_exh_final.merge(data_staff[["人員姓名", "獎金用職級"]], left_on="接待人員", right_on="人員姓名", how="left")
+data_exh_final.merge(exh_staff[["人員姓名", "獎金用職級"]], left_on="接待人員", right_on="人員姓名", how="left")
 
 # data_exh_final.to_excel('data_exh_final.xlsx', index=False)
 
 
 with pd.ExcelWriter("exh_bonus.xlsx") as writer:
     data_exh.to_excel(writer, sheet_name="pivot", index=False)
+    data_exh_final.to_excel(writer, sheet_name="final", index=False)
+
+
+
+
+
+###################################
+########## 外勤業務追縱紀錄 ##########
+###################################
+now = pd.Timestamp.now(tz="UTC") 
+start_date_K = pd.Timestamp(year=now.year, month=now.month, day=1, tz="UTC").timestamp() * 1000
+
+
+select_query = f'''
+SELECT name
+, customItem126__c 創建人
+, createdAt 創建日期
+, customItem139__c 拜訪分鐘數
+, customItem207__c 講解分鐘數
+, customItem4__c 工作類別
+FROM customEntity15__c
+WHERE createdAt >= {start_date_K}'''
+TW_sales = query_CRM(select_query)
+data_sales = TW_sales[:]
+
+data_sales['創建日期'] = data_sales['創建日期'].apply(fn_datetime)
+data_sales['創建日期'] = pd.to_datetime(data_sales['創建日期'])
+data_sales['拜訪分鐘數'] = pd.to_numeric(data_sales['拜訪分鐘數'])
+data_sales['講解分鐘數'] = pd.to_numeric(data_sales['講解分鐘數'])
+
+
+data_sales['創建人'] = data_sales['創建人'].replace("", float("nan"))
+data_sales = data_sales.loc[data_sales['創建人'].notna()]
+data_sales = data_sales[data_sales['創建人'].isin(sales_staff['人員姓名'])]
+data_sales = data_sales.merge(sales_staff[["人員姓名", "獎金用職級"]], left_on="創建人", right_on="人員姓名", how="left")
+data_sales = data_sales.drop(columns=["人員姓名"])
+
+##台灣事業部、專案事業部##
+project_data = data_sales.loc[data_sales['工作類別']]
+
+
+data_exh['交辦認列場次'] = data_exh.apply(
+    lambda row: 0 if (row['獎金用職級'] == '展示館兼職') else
+               0 if pd.notna(row['接待分鐘數']) and row['接待分鐘數'] <= 10 and row['獎金用職級'] == '門市業務' else
+               0.3 if pd.notna(row['接待分鐘數']) and row['接待分鐘數'] <= 30 and row['獎金用職級'] == '門市業務' else
+               0.8 if pd.notna(row['接待分鐘數']) and row['接待分鐘數'] <= 60 and row['獎金用職級'] == '門市業務' else
+               1 if pd.notna(row['接待分鐘數']) and row['獎金用職級'] == '門市業務' else np.nan, axis=1)
+
+
+data_exh['K大目標場次'] = data_exh['接待分鐘數'].apply(
+    lambda x: 1 if x>0 else 0)
+
+data_exh['K大認列場次'] = data_exh.apply(
+    lambda row: 0.3 if pd.notna(row['講解分鐘數']) and row['講解分鐘數'] <= 10 and row['獎金用職級'] == '門市業務' else
+               0.8 if pd.notna(row['講解分鐘數']) and row['講解分鐘數'] <= 20 and row['獎金用職級'] == '門市業務' else
+               1 if pd.notna(row['講解分鐘數']) and row['講解分鐘數'] <= 30 and row['獎金用職級'] == '門市業務' else
+               1.2 if pd.notna(row['講解分鐘數']) and row['獎金用職級'] == '門市業務' else 
+               0 if pd.notna(row['講解分鐘數']) and row['講解分鐘數'] <= 10 and row['獎金用職級'] == '展示館兼職' else 
+               0.5 if pd.notna(row['講解分鐘數']) and row['講解分鐘數'] <= 15 and row['獎金用職級'] == '展示館兼職' else
+               1 if pd.notna(row['講解分鐘數']) and row['講解分鐘數'] <= 25 and row['獎金用職級'] == '展示館兼職' else
+               2 if pd.notna(row['講解分鐘數'])  and row['獎金用職級'] == '展示館兼職' else np.nan, axis=1)
+
+# data_exh.to_excel('data_exh.xlsx', index=False)
+
+
+data_exh_final = pd.DataFrame()
+data_exh_final = data_exh.groupby('接待人員').agg(
+    交辦認列場次 =('交辦認列場次', 'sum'),
+    K大目標場次 =('K大目標場次', 'sum'),
+    K大認列場次 =('K大認列場次', 'sum')
+).reset_index()
+
+data_exh_final.merge(exh_staff[["人員姓名", "獎金用職級"]], left_on="接待人員", right_on="人員姓名", how="left")
+
+# data_exh_final.to_excel('data_exh_final.xlsx', index=False)
+
+
+with pd.ExcelWriter("sales_bonus.xlsx") as writer:
+    data_sales.to_excel(writer, sheet_name="pivot", index=False)
     data_exh_final.to_excel(writer, sheet_name="final", index=False)
