@@ -180,5 +180,3 @@ data_exh_final.merge(data_staff[["人員姓名", "獎金用職級"]], left_on="�
 with pd.ExcelWriter("exh_bonus.xlsx") as writer:
     data_exh.to_excel(writer, sheet_name="pivot", index=False)
     data_exh_final.to_excel(writer, sheet_name="final", index=False)
-
-ddddd
