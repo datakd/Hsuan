@@ -11,15 +11,15 @@ import time
 import re
 
 
-os.system("cls")
-os.getcwd()
-os.chdir("/Users/Hsuan/Desktop/KD/獎金計算")
+# os.system("cls")
+# os.getcwd()
+# os.chdir("/Users/Hsuan/Desktop/KD/獎金計算")
 
 
 ########################### CRM Setting ###########################
 ###################################################################
 userID = "11021300@twkd.com"
-pwd = "Kd11021300"
+pwd = "Kd110213001998"
 security_token_TWOS = "AGLnwLr1"
 
 #### p10 ####
@@ -97,6 +97,13 @@ SELECT customItem21__c 員工編號
 FROM customEntity31__c'''
 TW_staff = query_CRM(select_query)
 data_staff = TW_staff[:]
+
+first_day = dt.datetime.today().replace(day=1)
+
+sys_staff = data_staff.loc[
+    (data_staff['失效日期'].isna() | (data_staff['失效日期'] >= first_day)) &
+    ((data_staff['獎金用職級'] == '系統櫃外勤業務'))]
+sys_staff = sys_staff.drop_duplicates(subset=['員工編號'])
 
 
 

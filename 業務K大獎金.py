@@ -19,7 +19,7 @@ os.chdir("/Users/Hsuan/Desktop/KD/獎金計算")
 ########################### CRM Setting ###########################
 ###################################################################
 userID = "11021300@twkd.com"
-pwd = "Kd11021300"
+pwd = "Kd110213001998"
 security_token_TWOS = "AGLnwLr1"
 
 #### p10 ####
@@ -198,7 +198,7 @@ with pd.ExcelWriter("exh_bonus.xlsx") as writer:
 
 
 ###################################
-########## 外勤業務追縱紀錄 ##########
+############# 外勤業務 #############
 ###################################
 now = pd.Timestamp.now(tz="UTC") 
 start_date_K = pd.Timestamp(year=now.year, month=now.month, day=1, tz="UTC").timestamp() * 1000
@@ -207,9 +207,8 @@ start_date_K = pd.Timestamp(year=now.year, month=now.month, day=1, tz="UTC").tim
 select_query = f'''
 SELECT name
 , customItem126__c 創建人
+, accountCode__c 公司代號
 , createdAt 創建日期
-, customItem139__c 拜訪分鐘數
-, customItem207__c 講解分鐘數
 , customItem4__c 工作類別
 FROM customEntity15__c
 WHERE createdAt >= {start_date_K}'''
