@@ -176,6 +176,7 @@ data_account_filtered = data_account.loc[(~data_account['公司全名'].str.cont
                                 (data_account['倒閉無效'] != '是') &\
                                 data_account['資料區域名稱'].str.contains('TW-Z') &\
                                 data_account['公司型態'].str.contains('SE|F|KZ') &\
+                                ~data_account['公司型態'].str.contains('FZ') &\
                                 ~data_account['勿擾選項'].str.contains('勿拜訪') &\
                                 ~data_account['公司地址'].str.contains('花蓮｜台東｜金門｜澎湖｜馬祖')]
 
@@ -257,10 +258,16 @@ final_data1 = final_data1[['related_company']]
 final_data1 = final_data1.drop_duplicates('related_company')
 
 ##step2:合併final_data1與data_account取得戶資料##
-final_data2 = final_data1.merge(data_account_filtered[["公司代號", "公司全名", "資料區域名稱", "公司地址", "公司型態", "sap公司代號", "目標客戶類型"]], 
+final_data2 = final_data1.merge(data_account_filtered[["公司代號", "公司全名", "資料區域名稱", "公司地址", "公司型態", "目標客戶類型"]], 
                               left_on="related_company", right_on="公司代號", how='left')
 final_data2 = final_data2.loc[~final_data2['公司代號'].isna()]
 final_data2 = final_data2.drop(columns=['公司代號'])
+
+filtered_data = data_account_filtered.loc[~data_account_filtered['公司代號'].isin(data_network['related_company'])]
+filtered_data = filtered_data.drop(columns=['倒閉無效', '勿擾選項', 'sap公司代號'])
+filtered_data = filtered_data.rename(columns={'公司代號': 'related_company'})
+
+final_data2 = pd.concat([final_data2, filtered_data])
 
 ##step3:final_data2公司代號排除無效聯絡人
 final_data3 = final_data2.loc[final_data2['related_company'].isin(data_rel_contact['公司代號'])]
@@ -273,7 +280,7 @@ final_data4 = final_data4.drop_duplicates("related_company")
 
 
 
-old_data = pd.read_excel("C:/Users/11021300/Documents/拜訪清單/2503/專案交辦.xlsx")
+old_data = pd.read_excel("C:/Users/11021300/Documents/拜訪清單/2503/專案2502歷史清單.xlsx")
 final_data4 = final_data4.loc[~final_data4['related_company'].isin(old_data['公司代號'])]
 
 
@@ -284,7 +291,7 @@ final_KZ = final_data4.loc[final_data4['公司型態'] == 'KZ']
 final_F = final_data4.loc[final_data4['公司型態'].str.contains("F")]
 
 
-with pd.ExcelWriter("專案拜訪清單2503.xlsx") as writer:
+with pd.ExcelWriter("專案SE_F_KZ.xlsx") as writer:
     final_SE.to_excel(writer, sheet_name="專案SE類拜訪清單", index=False)
     final_F.to_excel(writer, sheet_name="專案F類拜訪清單", index=False)
     final_KZ.to_excel(writer, sheet_name="專案KZ類拜訪清單", index=False)

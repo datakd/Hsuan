@@ -14,7 +14,7 @@ import re
 
 # os.system("cls")
 # os.getcwd()
-os.chdir("/Users/meng/Desktop/KD/拜訪清單")
+os.chdir("C:/Users/11021300/Documents/拜訪清單/2503")
 
 ########################### CRM Setting ###########################
 ###################################################################
@@ -79,6 +79,7 @@ def query_CRM(select_query, url_select = url_select_TWOS, header = header_TWOS):
 select_query = f'''
 SELECT accountCode__c 公司代號
 , accountName 公司全名
+, SAP_CompanyID__c sap公司代號
 , dimDepart.departName 資料區域名稱
 , customItem202__c 公司地址
 , customItem322__c 目標客戶類型
@@ -94,16 +95,17 @@ data_account['公司全名'] = data_account.apply(lambda x: re.sub(r'[\[\]\"\'\(
 data_account['目標客戶類型'] = data_account.apply(lambda x: re.sub(r'[\[\]\"\'\(\)]', '', str(x['目標客戶類型'])), axis=1)
 data_account['倒閉無效'] = data_account.apply(lambda x: re.sub(r'[\[\]\"\'\(\)]', '', str(x['倒閉無效'])), axis=1)
 data_account['勿擾選項'] = data_account.apply(lambda x: re.sub(r'[\[\]\"\'\(\)\,]', '', str(x['勿擾選項'])), axis=1)
+data_account = data_account.drop_duplicates('公司代號')
 
 company_name = ['倒閉', '歇業', '停業', '轉行', '退休', '過世', '燈箱', '群組', '支援', '留守', '教育訓練', '無效拜訪', '資料不全', '搬遷', '廢止', 
                 '解散', '管制', '非營業中']
-data_account = data_account.loc[(~data_account['公司全名'].str.contains('|'.join(company_name), na=False)) &\
+data_account_filtered = data_account.loc[(~data_account['公司全名'].str.contains('|'.join(company_name), na=False)) &\
                                 (data_account['倒閉無效'] != '是') &\
-                                ~data_account['資料區域名稱'].str.contains('INV|888|LB|CPT|PD') &\
+                                ~data_account['資料區域名稱'].str.contains('INV|888|LB|CPT|PD|Z1|Z2|Z3|Z4') &\
+                                data_account['資料區域名稱'].str.contains('TW') &\
                                 data_account['公司型態'].str.contains('KD') &\
                                 ~data_account['勿擾選項'].str.contains('勿拜訪') &\
                                 ~data_account['公司地址'].str.contains('金門｜澎湖｜馬祖')]
-data_account = data_account.drop_duplicates('公司代號')
 
 
 ########## 關係網路 ##########
@@ -234,30 +236,40 @@ data_track_months = data_track_months.drop_duplicates("公司代號")
 ##step1:合併客戶公司代號到關係網路公司代號-2,並用公司代號-1取代公司代號-2##
 final_data1 = data_network.merge(data_account[["公司代號"]], 
                                  left_on="公司代號2", right_on="公司代號", how='left')
-final_data1 = final_data1.drop(columns=['公司區域1', '公司名稱1', '公司代號2', '公司區域2', '公司名稱2', '公司代號', '層級說明'])
-final_data1 = final_data1.drop_duplicates('公司代號1')
+final_data1 = final_data1[['related_company']]
+final_data1 = final_data1.drop_duplicates('related_company')
 
 ##step2:合併final_data1與data_account取得戶資料##
-final_data2 = final_data1.merge(data_account[["公司代號", "公司全名", "資料區域名稱", "公司地址", "公司型態", "sap公司代號", "目標客戶類型"]], 
-                              left_on="公司代號1", right_on="公司代號", how='left')
+final_data2 = final_data1.merge(data_account_filtered[["公司代號", "公司全名","sap公司代號", "資料區域名稱", "公司地址", "公司型態", "目標客戶類型"]], 
+                              left_on="related_company", right_on="公司代號", how='left')
 final_data2 = final_data2.loc[~final_data2['公司代號'].isna()]
-final_data2 = final_data2.drop(columns=['公司代號1'])
+final_data2 = final_data2.drop(columns=['公司代號'])
+
+filtered_data = data_account_filtered.loc[~data_account_filtered['公司代號'].isin(data_network['related_company'])]
+filtered_data = filtered_data.drop(columns=['倒閉無效', '勿擾選項'])
+filtered_data = filtered_data.rename(columns={'公司代號': 'related_company'})
+
+final_data2 = pd.concat([final_data2, filtered_data])
+
 
 ##step3:final_data2公司代號排除無效聯絡人
-final_data3 = final_data2.loc[final_data2['公司代號'].isin(data_rel_contact['公司代號'])]
+final_data3 = final_data2.loc[final_data2['related_company'].isin(data_rel_contact['公司代號'])]
 
 ##step4:final_data3排除近三個月有拜訪的客戶並對追蹤紀錄創建日期排序(遠到近)##
-final_data4 = final_data3.loc[~final_data3['公司代號'].isin(data_track['公司代號'])]
-final_data4 = final_data4.merge(data_track_months[["公司代號", "創建日期"]], left_on="公司代號", right_on="公司代號", how='left')
+final_data4 = final_data3.loc[~final_data3['related_company'].isin(data_track['公司代號'])]
+final_data4 = final_data4.merge(data_track_months[["公司代號", "創建日期"]], left_on="related_company", right_on="公司代號", how='left')
+final_data4 = final_data4.drop(columns=['公司代號'])
 final_data4 = final_data4.sort_values(by="創建日期", ascending=True, na_position='first')
-final_data4 = final_data4.drop_duplicates("公司代號")
+final_data4 = final_data4.drop_duplicates("related_company")
+
+final_data4['主旨'] = "(指標)美耐板大型公共工程導入"
 
 
-##output##
-final_SE = final_data4.loc[final_data4['公司型態'] == 'SE']
-final_F = final_data4.loc[~final_data4['公司代號'].isin(final_SE['公司代號'])]
+#####信用管制#####
+control_data = pd.read_excel("C:/Users/11021300/Documents/拜訪清單/SAP信用管制_2503.xlsx")
+control_data = control_data.loc[control_data['客戶編號'].str.contains("TW") &\
+                                control_data['信用管制說明'].str.contains("管制")]
 
+final_data4 = final_data4.loc[~final_data4['sap公司代號'].isin(control_data['客戶編號'])]
 
-with pd.ExcelWriter("專案拜訪清單2503.xlsx") as writer:
-    final_SE.to_excel(writer, sheet_name="專案SE類拜訪清單", index=False)
-    final_F.to_excel(writer, sheet_name="專案F類拜訪清單", index=False)
+final_data4.to_excel("美耐板大型公共工程導入.xlsx", index=False)

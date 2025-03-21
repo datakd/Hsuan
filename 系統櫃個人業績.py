@@ -100,6 +100,10 @@ data_staff = TW_staff[:]
 
 first_day = dt.datetime.today().replace(day=1)
 
+data_staff['失效日期'] = data_staff['失效日期'].apply(fn_datetime)
+data_staff['失效日期'] = pd.to_datetime(data_staff['失效日期'])
+data_staff['獎金用職級'] = data_staff.apply(lambda x: re.sub(r'[\[\]\"\'\(\)\,]', '', str(x['獎金用職級'])), axis=1)
+
 sys_staff = data_staff.loc[
     (data_staff['失效日期'].isna() | (data_staff['失效日期'] >= first_day)) &
     ((data_staff['獎金用職級'] == '系統櫃外勤業務'))]
@@ -110,20 +114,76 @@ sys_staff = sys_staff.drop_duplicates(subset=['員工編號'])
 
 
 ########## 追蹤紀錄 ##########
-############################
+#############################
 now = pd.Timestamp.now(tz="UTC") 
 start_date_K = pd.Timestamp(year=now.year, month=now.month, day=1, tz="UTC").timestamp() * 1000
 
 
 select_query = f'''
-SELECT name
-, customItem126__c 創建人
+SELECT name id
+, customItem126__c.name 創建人
 , createdAt 創建日期
 , customItem4__c 工作類別
 FROM customEntity15__c
 WHERE createdAt >= {start_date_K}'''
-track_data = query_CRM(select_query)
-track = track_data[:]
+track = query_CRM(select_query)
+track_data = track[:]
 
-track['創建日期'] = track['創建日期'].apply(fn_datetime)
-track['創建日期'] = pd.to_datetime(track['創建日期'])
+track_data['創建日期'] = track_data['創建日期'].apply(fn_datetime)
+track_data['創建日期'] = pd.to_datetime(track_data['創建日期'])
+track_data['工作類別'] = track_data.apply(lambda x: re.sub(r'[\[\]\"\'\(\)\,]', '', str(x['工作類別'])), axis=1)
+track_data = track_data.loc[track_data['工作類別'].str.contains("G1-1|G1-2|G1-3")]
+
+track_data = track_data.loc[track_data['創建人'].isin(sys_staff['人員姓名'])]
+
+
+
+
+data = {'採購單分機': ['洪仁傑/GTR03759960', '洪仁傑/GTR03760133', '高孟賢/GTR00000001','高孟賢/GTR03760145/0.2', '高孟賢/GTR00000005/0.2','黃小明/GTR00000010'],
+        '銷售金額':[1000,1000,1000,1000,1000,1000]}
+fake_df = pd.DataFrame(data)
+
+fake_df[['業務人員姓名', '工作代號', '拆分']] = fake_df['採購單分機'].str.split('/', expand=True)
+fake_df = fake_df.loc[fake_df['業務人員姓名'].isin(sys_staff['人員姓名'])]
+
+test_data = pd.read_excel("C:/Users/11021300/Desktop/系統櫃測試數據.xlsx")
+
+sap_data = fake_df.merge(test_data, left_on='工作代號', right_on='id', how='left')
+sap_data['拆分'] = pd.to_numeric(sap_data['拆分'], errors='coerce')
+
+
+def calculate_performance(row):
+    salesperson_performance = 0
+    creator_performance = 0
+    
+    if row['業務人員姓名'] == row['創建人'] and row['工作代號'] == row['id'] and pd.isna(row['拆分']):
+        salesperson_performance = row['銷售金額'] * 1
+    elif row['業務人員姓名'] != row['創建人'] and row['工作代號'] == row['id'] and pd.isna(row['拆分']):
+        salesperson_performance = row['銷售金額'] * 0.6
+        creator_performance = row['銷售金額'] * 0.4
+    elif pd.isna(row['id']):
+        salesperson_performance = row['銷售金額'] * 1
+    elif row['業務人員姓名'] != row['創建人'] and row['工作代號'] == row['id'] and row['創建人'] != '林怡伶':
+        salesperson_performance = row['銷售金額'] * row['拆分']
+        creator_performance = row['銷售金額'] * (1 - row['拆分'])
+    elif row['創建人'] == '林怡伶':
+        salesperson_performance = row['銷售金額'] * row['拆分']
+    
+    return pd.Series([salesperson_performance, creator_performance])
+
+
+sap_data[['業務人員業績', '追蹤紀錄創建人業績']] = sap_data.apply(calculate_performance, axis=1)
+
+sap_data1 = sap_data[['業務人員姓名', '業務人員業績']].rename(columns={'業務人員姓名': '姓名', '業務人員業績': '個人業績'})
+sap_data2 = sap_data[['創建人', '追蹤紀錄創建人業績']].rename(columns={'創建人': '姓名', '追蹤紀錄創建人業績': '個人業績'})
+
+sap_data_final = pd.concat([sap_data1, sap_data2], ignore_index=True)
+sap_data_final = sap_data_final.groupby('姓名')['個人業績'].sum().reset_index()
+sap_data_final = sap_data_final.loc[~sap_data_final['姓名'].isna() &\
+                                    (sap_data_final['姓名'] != '林怡伶')]
+
+
+warning_data = sap_data.loc[sap_data['創建人'].isna()]
+
+
+
