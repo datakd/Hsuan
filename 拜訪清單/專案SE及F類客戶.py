@@ -1,5 +1,5 @@
 #20250319
-#SE及F類客戶
+#SE/F/KZ類客戶
 
 import pandas as pd
 import numpy as np
@@ -16,7 +16,7 @@ import re
 
 # os.system("cls")
 # os.getcwd()
-os.chdir("/Users/meng/Desktop/KD/拜訪清單")
+os.chdir("C:/Users/11021300/Documents/拜訪清單/2503")
 
 ########################### CRM Setting ###########################
 ###################################################################
@@ -168,15 +168,16 @@ data_account['目標客戶類型'] = data_account.apply(lambda x: re.sub(r'[\[\]
 data_account['倒閉無效'] = data_account.apply(lambda x: re.sub(r'[\[\]\"\'\(\)]', '', str(x['倒閉無效'])), axis=1)
 data_account['勿擾選項'] = data_account.apply(lambda x: re.sub(r'[\[\]\"\'\(\)\,]', '', str(x['勿擾選項'])), axis=1)
 
+data_account = data_account.drop_duplicates('公司代號')
+
 company_name = ['倒閉', '歇業', '停業', '轉行', '退休', '過世', '燈箱', '群組', '支援', '留守', '教育訓練', '無效拜訪', '資料不全', '搬遷', '廢止', 
                 '解散', '管制', '非營業中']
-data_account = data_account.loc[(~data_account['公司全名'].str.contains('|'.join(company_name), na=False)) &\
+data_account_filtered = data_account.loc[(~data_account['公司全名'].str.contains('|'.join(company_name), na=False)) &\
                                 (data_account['倒閉無效'] != '是') &\
                                 data_account['資料區域名稱'].str.contains('TW-Z') &\
-                                data_account['公司型態'].str.contains('SE|F') &\
+                                data_account['公司型態'].str.contains('SE|F|KZ') &\
                                 ~data_account['勿擾選項'].str.contains('勿拜訪') &\
                                 ~data_account['公司地址'].str.contains('花蓮｜台東｜金門｜澎湖｜馬祖')]
-data_account = data_account.drop_duplicates('公司代號')
 
 
 ########## 客戶關係聯絡人 ##########
@@ -224,7 +225,6 @@ data_track = data_track.loc[data_track['觸客類型'].str.contains('A1')]
 data_track = data_track.drop_duplicates("公司代號")
 
 
-
 ########## 近一年拜訪追蹤紀錄 ##########
 now = pd.Timestamp.now(tz="UTC")
 six_months_ago = now - pd.DateOffset(months=6)
@@ -257,7 +257,7 @@ final_data1 = final_data1[['related_company']]
 final_data1 = final_data1.drop_duplicates('related_company')
 
 ##step2:合併final_data1與data_account取得戶資料##
-final_data2 = final_data1.merge(data_account[["公司代號", "公司全名", "資料區域名稱", "公司地址", "公司型態", "sap公司代號", "目標客戶類型"]], 
+final_data2 = final_data1.merge(data_account_filtered[["公司代號", "公司全名", "資料區域名稱", "公司地址", "公司型態", "sap公司代號", "目標客戶類型"]], 
                               left_on="related_company", right_on="公司代號", how='left')
 final_data2 = final_data2.loc[~final_data2['公司代號'].isna()]
 final_data2 = final_data2.drop(columns=['公司代號'])
@@ -266,17 +266,25 @@ final_data2 = final_data2.drop(columns=['公司代號'])
 final_data3 = final_data2.loc[final_data2['related_company'].isin(data_rel_contact['公司代號'])]
 
 ##step4:final_data3排除近三個月有拜訪的客戶並對追蹤紀錄創建日期排序(遠到近)##
-final_data4 = final_data3.loc[~final_data3['公司代號'].isin(data_track['公司代號'])]
-final_data4 = final_data4.merge(data_track_months[["公司代號", "創建日期"]], left_on="公司代號", right_on="公司代號", how='left')
+final_data4 = final_data3.loc[~final_data3['related_company'].isin(data_track['公司代號'])]
+final_data4 = final_data4.merge(data_track_months[["公司代號", "創建日期"]], left_on="related_company", right_on="公司代號", how='left')
 final_data4 = final_data4.sort_values(by="創建日期", ascending=True, na_position='first')
-final_data4 = final_data4.drop_duplicates("公司代號")
+final_data4 = final_data4.drop_duplicates("related_company")
+
+
+
+old_data = pd.read_excel("C:/Users/11021300/Documents/拜訪清單/2503/專案交辦.xlsx")
+final_data4 = final_data4.loc[~final_data4['related_company'].isin(old_data['公司代號'])]
+
 
 
 ##output##
 final_SE = final_data4.loc[final_data4['公司型態'] == 'SE']
-final_F = final_data4.loc[~final_data4['公司代號'].isin(final_SE['公司代號'])]
+final_KZ = final_data4.loc[final_data4['公司型態'] == 'KZ']
+final_F = final_data4.loc[final_data4['公司型態'].str.contains("F")]
 
 
 with pd.ExcelWriter("專案拜訪清單2503.xlsx") as writer:
     final_SE.to_excel(writer, sheet_name="專案SE類拜訪清單", index=False)
     final_F.to_excel(writer, sheet_name="專案F類拜訪清單", index=False)
+    final_KZ.to_excel(writer, sheet_name="專案KZ類拜訪清單", index=False)
